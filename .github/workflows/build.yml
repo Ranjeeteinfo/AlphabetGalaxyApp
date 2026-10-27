@@ -1,3 +1,55 @@
+# name: Build Android APK
+# on:
+#   push:
+#     branches: [main, master]
+#   workflow_dispatch:
+
+# jobs:
+#   build:
+#     runs-on: ubuntu-22.04
+#     timeout-minutes: 120
+#     defaults:
+#       run:
+#         shell: bash
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.11'
+#       - uses: actions/setup-java@v4
+#         with:
+#           distribution: temurin
+#           java-version: '17'
+#       - name: System packages
+#         run: |
+#           sudo apt-get update
+#           sudo apt-get install -y git zip unzip autoconf automake libtool pkg-config \
+#             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+#       - name: Cache Buildozer
+#         uses: actions/cache@v4
+#         with:
+#           path: |
+#             ~/.buildozer
+#             .buildozer
+#           key: buildozer-${{ hashFiles('buildozer.spec') }}
+#       - name: Install Buildozer
+#         run: pip install buildozer "cython==0.29.36" virtualenv
+#       - name: Build debug APK
+#         run: buildozer -v android debug 2>&1 | tee build.log
+#       - name: Upload APK
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: AlphabetGalaxy-apk
+#           path: bin/*.apk
+#           if-no-files-found: error
+#       - name: Upload build log (for troubleshooting)
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: build-log
+#           path: build.log
+
+
 name: Android Integration
 
 on:
@@ -66,10 +118,18 @@ jobs:
             https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
 
           rm -rf "$ANDROID_SDK_ROOT/cmdline-tools"
-          unzip -q cmdline-tools.zip -d "$ANDROID_SDK_ROOT"
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
 
-          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-          cp -a "$ANDROID_SDK_ROOT/cmdline-tools/." "$ANDROID_SDK_ROOT/cmdline-tools/latest/"
+          unzip -q cmdline-tools.zip -d "$ANDROID_SDK_ROOT/cmdline-tools"
+
+          # Google SDK ZIP usually extracts under cmdline-tools/cmdline-tools
+          if [ -d "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" ]; then
+            mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+            cp -a "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools/." "$ANDROID_SDK_ROOT/cmdline-tools/latest/"
+          else
+            mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+            cp -a "$ANDROID_SDK_ROOT/cmdline-tools/." "$ANDROID_SDK_ROOT/cmdline-tools/latest/"
+          fi
 
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" --licenses
 
@@ -134,6 +194,7 @@ jobs:
           path: bin/*.apk
           if-no-files-found: error
           retention-days: 7
+          
 
 # # Workflow ka naam jo GitHub Actions mein dikhega.
 # name: Android Integration
