@@ -1,4 +1,4 @@
 # Desktop development (Windows / Linux / macOS). Python 3.10-3.12.
 kivy==2.3.1
-kivymd==1.2.0
+kivymd==1.0.2
 pillow

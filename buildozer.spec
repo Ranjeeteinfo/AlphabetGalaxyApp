@@ -9,8 +9,8 @@ source.exclude_dirs = tools,bin,.buildozer,.github,venv,__pycache__
 version = 1.0.0
 
 # Only what the game needs (all supported by python-for-android).
-# requirements = python3,kivy==2.3.1,kivymd==1.0.2,pillow
-requirements = python3,kivy==2.3.1,kivymd==1.2.0,pillow
+requirements = python3,kivy==2.3.1,kivymd==1.0.2,pillow
+
 
 icon.filename = %(source.dir)s/assets/icon.png
 presplash.filename = %(source.dir)s/assets/presplash.png
