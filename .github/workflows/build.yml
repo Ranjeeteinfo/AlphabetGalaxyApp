@@ -1,130 +1,97 @@
-# name: Build Android APK
-# on:
-#   push:
-#     branches: [main, master]
-#   workflow_dispatch:
-
-# jobs:
-#   build:
-#     runs-on: ubuntu-22.04
-#     timeout-minutes: 120
-#     defaults:
-#       run:
-#         shell: bash
-#     steps:
-#       - uses: actions/checkout@v4
-#       - uses: actions/setup-python@v5
-#         with:
-#           python-version: '3.11'
-#       - uses: actions/setup-java@v4
-#         with:
-#           distribution: temurin
-#           java-version: '17'
-#       - name: System packages
-#         run: |
-#           sudo apt-get update
-#           sudo apt-get install -y git zip unzip autoconf automake libtool pkg-config \
-#             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
-#       - name: Cache Buildozer
-#         uses: actions/cache@v4
-#         with:
-#           path: |
-#             ~/.buildozer
-#             .buildozer
-#           key: buildozer-${{ hashFiles('buildozer.spec') }}
-#       - name: Install Buildozer
-#         run: pip install buildozer "cython==0.29.36" virtualenv
-#       - name: Build debug APK
-#         run: buildozer -v android debug 2>&1 | tee build.log
-#       - name: Upload APK
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: AlphabetGalaxy-apk
-#           path: bin/*.apk
-#           if-no-files-found: error
-#       - name: Upload build log (for troubleshooting)
-#         if: always()
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: build-log
-#           path: build.log
-
-
-
-# Workflow ka naam jo GitHub Actions mein dikhega.
 name: Android Integration
 
-# Workflow kab run hoga?
 on:
-  # Main branch par code push hone par APK build hogi.auto matice
   push:
     branches:
       - main
-
-  # GitHub Actions se manually bhi build chala sakte hain.
   workflow_dispatch:
 
-# Android build ke liye environment variable.
 env:
-  # Build ke dauran interactive prompts disable karta hai.
   PYTHONFORANDROID_PREREQUISITES_INSTALL_INTERACTIVE: "0"
+  ANDROID_SDK_ROOT: /home/runner/android-sdk
+  ANDROID_HOME: /home/runner/android-sdk
 
 jobs:
-  # Android APK build karne wala job.
   Integration:
-    # Android build ke liye Ubuntu runner use karein.
     runs-on: ubuntu-22.04
+    timeout-minutes: 120
 
-    # Build bahut der tak atakne se rokne ke liye timeout.
-    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
 
     steps:
-      # Step 1: Repository ka code download karein.
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
-      # Step 2: Python 3.11 install karein.
       - name: Setup Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # Step 3: Android build ke liye Java 17 install karein.
       - name: Setup Java
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v4
         with:
-          java-version: "17"
           distribution: "temurin"
+          java-version: "17"
 
-      # Step 4: Check karein ki project files maujood hain.
-      - name: Check Project
+      - name: Verify project files
         run: |
           test -f buildozer.spec
           test -f main.py
 
-      # Step 5: Linux par Buildozer ki required dependencies install karein.
-      - name: Install Linux Dependencies
+      - name: Install Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git zip unzip \
-            autoconf automake autopoint \
-            libtool libltdl-dev \
-            pkg-config cmake \
-            zlib1g-dev \
-            libncurses5-dev libncursesw5-dev \
-            libffi-dev libssl-dev \
-            build-essential
+            git zip unzip curl ca-certificates \
+            autoconf automake autopoint libtool pkg-config \
+            cmake build-essential \
+            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 \
+            libffi-dev libssl-dev
 
-      # Step 6: Buildozer aur compatible Cython install karein.
-      - name: Setup Build Environment
+      - name: Install Buildozer and dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install "Cython==0.29.34" buildozer
+          python -m pip install "Cython==0.29.36" buildozer virtualenv
 
-      # Step 7: SDK license setting enable karein.
-      # Existing setting ho to update karein; nahi ho to add karein.
-      - name: Configure Android Build
+      - name: Setup Android SDK manually
+        run: |
+          set -eux
+
+          mkdir -p "$ANDROID_SDK_ROOT"
+
+          cd /tmp
+          curl -L -o cmdline-tools.zip \
+            https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+
+          rm -rf "$ANDROID_SDK_ROOT/cmdline-tools"
+          unzip -q cmdline-tools.zip -d "$ANDROID_SDK_ROOT"
+
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          cp -a "$ANDROID_SDK_ROOT/cmdline-tools/." "$ANDROID_SDK_ROOT/cmdline-tools/latest/"
+
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" --licenses
+
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" \
+            "platform-tools" \
+            "platforms;android-33" \
+            "build-tools;33.0.2" \
+            "ndk;25.2.9519653"
+
+      - name: Cache Android and Buildozer data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: android-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            android-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Configure Buildozer
         shell: bash
         run: |
           set -e
@@ -133,37 +100,23 @@ jobs:
             sed -i \
               's/^[[:space:]]*android.accept_sdk_license[[:space:]]*=.*/android.accept_sdk_license = True/' \
               buildozer.spec
-
           elif grep -Eq '^[[:space:]]*#[[:space:]]*android.accept_sdk_license[[:space:]]*=' buildozer.spec; then
             sed -i \
               's/^[[:space:]]*#[[:space:]]*android.accept_sdk_license[[:space:]]*=.*/android.accept_sdk_license = True/' \
               buildozer.spec
-
           else
             sed -i '/^\[app\]/a android.accept_sdk_license = True' buildozer.spec
           fi
 
-      # Step 8: SDK, NDK aur Gradle cache restore karein.
-      # Isse future builds mein download ka time kam ho sakta hai.
-      - name: Cache Android Build Files
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.buildozer
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: android-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            android-${{ runner.os }}-${{ runner.arch }}-
-
-      # Step 9: Android debug APK banayein.
       - name: Create APK
         shell: bash
+        env:
+          ANDROID_HOME: /home/runner/android-sdk
+          ANDROID_SDK_ROOT: /home/runner/android-sdk
         run: |
           set -o pipefail
           buildozer -v android debug 2>&1 | tee build.log
 
-      # Step 10: Build log upload karein, chahe build fail ho ya pass.
       - name: Upload Build Log
         if: always()
         uses: actions/upload-artifact@v4
@@ -173,8 +126,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      # Step 11: Successful build ki APK upload karein.
-      # GitHub Actions ke Artifacts section se APK download hogi.
       - name: Save APK
         if: success()
         uses: actions/upload-artifact@v4
@@ -184,6 +135,139 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-# NOTE:
-# AAB aur iOS ke steps abhi include nahi kiye gaye hain.
-# Jab zaroorat ho, baad mein alag steps/jobs add kar sakte hain.
+# # Workflow ka naam jo GitHub Actions mein dikhega.
+# name: Android Integration
+
+# # Workflow kab run hoga?
+# on:
+#   # Main branch par code push hone par APK build hogi.auto matice
+#   push:
+#     branches:
+#       - main
+
+#   # GitHub Actions se manually bhi build chala sakte hain.
+#   workflow_dispatch:
+
+# # Android build ke liye environment variable.
+# env:
+#   # Build ke dauran interactive prompts disable karta hai.
+#   PYTHONFORANDROID_PREREQUISITES_INSTALL_INTERACTIVE: "0"
+
+# jobs:
+#   # Android APK build karne wala job.
+#   Integration:
+#     # Android build ke liye Ubuntu runner use karein.
+#     runs-on: ubuntu-22.04
+
+#     # Build bahut der tak atakne se rokne ke liye timeout.
+#     timeout-minutes: 90
+
+#     steps:
+#       # Step 1: Repository ka code download karein.
+#       - name: Checkout Repository
+#         uses: actions/checkout@v7
+
+#       # Step 2: Python 3.11 install karein.
+#       - name: Setup Python
+#         uses: actions/setup-python@v7
+#         with:
+#           python-version: "3.11"
+
+#       # Step 3: Android build ke liye Java 17 install karein.
+#       - name: Setup Java
+#         uses: actions/setup-java@v6
+#         with:
+#           java-version: "17"
+#           distribution: "temurin"
+
+#       # Step 4: Check karein ki project files maujood hain.
+#       - name: Check Project
+#         run: |
+#           test -f buildozer.spec
+#           test -f main.py
+
+#       # Step 5: Linux par Buildozer ki required dependencies install karein.
+#       - name: Install Linux Dependencies
+#         run: |
+#           sudo apt-get update
+#           sudo apt-get install -y \
+#             git zip unzip \
+#             autoconf automake autopoint \
+#             libtool libltdl-dev \
+#             pkg-config cmake \
+#             zlib1g-dev \
+#             libncurses5-dev libncursesw5-dev \
+#             libffi-dev libssl-dev \
+#             build-essential
+
+#       # Step 6: Buildozer aur compatible Cython install karein.
+#       - name: Setup Build Environment
+#         run: |
+#           python -m pip install --upgrade pip setuptools wheel
+#           python -m pip install "Cython==0.29.34" buildozer
+
+#       # Step 7: SDK license setting enable karein.
+#       # Existing setting ho to update karein; nahi ho to add karein.
+#       - name: Configure Android Build
+#         shell: bash
+#         run: |
+#           set -e
+
+#           if grep -Eq '^[[:space:]]*android.accept_sdk_license[[:space:]]*=' buildozer.spec; then
+#             sed -i \
+#               's/^[[:space:]]*android.accept_sdk_license[[:space:]]*=.*/android.accept_sdk_license = True/' \
+#               buildozer.spec
+
+#           elif grep -Eq '^[[:space:]]*#[[:space:]]*android.accept_sdk_license[[:space:]]*=' buildozer.spec; then
+#             sed -i \
+#               's/^[[:space:]]*#[[:space:]]*android.accept_sdk_license[[:space:]]*=.*/android.accept_sdk_license = True/' \
+#               buildozer.spec
+
+#           else
+#             sed -i '/^\[app\]/a android.accept_sdk_license = True' buildozer.spec
+#           fi
+
+#       # Step 8: SDK, NDK aur Gradle cache restore karein.
+#       # Isse future builds mein download ka time kam ho sakta hai.
+#       - name: Cache Android Build Files
+#         uses: actions/cache@v4
+#         with:
+#           path: |
+#             ~/.buildozer
+#             ~/.gradle/caches
+#             ~/.gradle/wrapper
+#           key: android-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('buildozer.spec') }}
+#           restore-keys: |
+#             android-${{ runner.os }}-${{ runner.arch }}-
+
+#       # Step 9: Android debug APK banayein.
+#       - name: Create APK
+#         shell: bash
+#         run: |
+#           set -o pipefail
+#           buildozer -v android debug 2>&1 | tee build.log
+
+#       # Step 10: Build log upload karein, chahe build fail ho ya pass.
+#       - name: Upload Build Log
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: Android-Build-Log
+#           path: build.log
+#           if-no-files-found: warn
+#           retention-days: 7
+
+#       # Step 11: Successful build ki APK upload karein.
+#       # GitHub Actions ke Artifacts section se APK download hogi.
+#       - name: Save APK
+#         if: success()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: KivyMD-Debug-APK
+#           path: bin/*.apk
+#           if-no-files-found: error
+#           retention-days: 7
+
+# # NOTE:
+# # AAB aur iOS ke steps abhi include nahi kiye gaye hain.
+# # Jab zaroorat ho, baad mein alag steps/jobs add kar sakte hain.
